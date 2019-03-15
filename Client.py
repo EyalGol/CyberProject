@@ -2,11 +2,24 @@ import pygame as pg
 from pygame.locals import *
 from threading import Thread
 import socket
-from json import dumps, loads
+from pickle import dumps, loads
 from select import select
 from time import sleep
 
 pg.init()
+
+
+def send_msg(conn, msg):
+    print("sending", str(msg)[:20] + "...")
+    msg = dumps(msg)
+    conn.send(msg)
+
+
+def recv_msg(conn):
+    print("receiving msg")
+    data = loads(conn.recv(100000000))
+    print(data, "received")
+    return data
 
 
 def render_text_center(surface, text, center_cords, color, backround=None):
@@ -41,7 +54,7 @@ class Game:
         self.is_playing = True
         self.screen = pg.display.set_mode((360, 600))
         self.font = pg.font.Font(None, 30)
-        self.client = socket.socket()
+        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.chat_log = []
         self.msg = ""
         self.points = []
@@ -54,37 +67,39 @@ class Game:
     def start_client(self, ip, port, gid=None):
         self.client.connect((ip, int(port)))
         if gid is None:
-            data = dumps({"new": True}).encode()
+            to_send = {"new": True}
         else:
-            data = dumps({"new": False, "gid": gid}).encode()
-        self.client.sendall(data)
-        json_dump = loads(self.client.recv(1024).decode())
-        self.pid = json_dump["pid"]
-        self.gid = json_dump["gid"]
+            to_send = {"new": False, "gid": gid}
+        send_msg(self.client, to_send)
+        data = recv_msg(self.client)
+        self.pid = data["pid"]
+        self.gid = data["gid"]
         while self.is_playing:
+            if "clear" in data:
+                if data["clear"]:
+                    self.points = []
+            data["clear"] = False
             read, write, _ = select([self.client], [self.client], [])
             if write:
                 if self.is_drawing:
-                    to_send = dumps({"is_drawing": True, "points": self.points}).encode()
-                    self.client.send(to_send)
+                    to_send = {"is_drawing": True, "points": self.points}
+                    send_msg(self.client, to_send)
                 else:
                     if len(self.msg) > 0:
-                        to_send = dumps({"is_drawing": False, "msg": self.msg}).encode()
+                        to_send = {"is_drawing": False, "msg": self.msg}
                         self.msg = ""
-                        self.client.send(to_send)
+                        send_msg(write[0], to_send)
             if read:
-                data = read[0].recv(100000).decode().split("}")[0] + "}"
-                print(data)
-                data = loads(data)
+                data = recv_msg(read[0])
                 if self.pid == data["drawing"]:
                     self.is_drawing = True
                 else:
                     self.is_drawing = False
                     self.points = data["points"]
-                    self.chat_log = data["chat_log"]
-                    self.last_winner = data["last_won"]
-                    self.answer = data["answer"]
-            sleep(0.1)
+                self.chat_log = data["chat_log"]
+                self.last_winner = data["last_won"]
+                self.answer = data["answer"]
+            sleep(0.2)
         self.client.close()
 
     def start_menu(self):
@@ -136,10 +151,11 @@ class Game:
             self.screen.fill((0, 0, 0))
             center = self.screen.get_rect().center
             ip_rect = render_text_center(self.screen, ip, (center[0], center[1] - 70), (255, 255, 255), (80, 80, 80))
-            port_rect = render_text_center(self.screen, port, (center[0], center[1] - 25), (255, 255, 255), (80, 80, 80))
+            port_rect = render_text_center(self.screen, port, (center[0], center[1] - 25), (255, 255, 255),
+                                           (80, 80, 80))
             gid_rect = render_text_center(self.screen, gid, (center[0], center[1] + 25), (255, 255, 255), (80, 80, 80))
-            connect_button_rect = render_text_center(self.screen, "Connect", (center[0], center[1] + 75), (255, 255, 255),
-                                                     (80, 80, 80))
+            connect_button_rect = render_text_center(self.screen, "Connect", (center[0], center[1] + 75),
+                                                     (255, 255, 255), (80, 80, 80))
             pg.display.flip()
             is_pressed = pg.mouse.get_pressed()[0]
             if is_pressed:
@@ -181,8 +197,8 @@ class Game:
             center = self.screen.get_rect().center
             ip_rect = render_text_center(self.screen, ip, (center[0], center[1] - 50), (255, 255, 255), (80, 80, 80))
             port_rect = render_text_center(self.screen, port, center, (255, 255, 255), (80, 80, 80))
-            connect_button_rect = render_text_center(self.screen, "Create", (center[0], center[1] + 50), (255, 255, 255),
-                                                     (80, 80, 80))
+            connect_button_rect = render_text_center(self.screen, "Create", (center[0], center[1] + 50),
+                                                     (255, 255, 255), (80, 80, 80))
             pg.display.flip()
             is_pressed = pg.mouse.get_pressed()[0]
             if is_pressed:
@@ -209,7 +225,7 @@ class Game:
                 is_pressed = pg.mouse.get_pressed()[0]
                 if is_pressed:
                     pos = pg.mouse.get_pos()
-                    if pos[0] < width-413:
+                    if pos[0] < width - 413:
                         self.points.append(pos)
             else:
                 for evt in pg.event.get():
@@ -224,7 +240,7 @@ class Game:
                         else:
                             msg_current += evt.unicode
             self.screen.fill((230, 230, 230))
-            hr = pg.Rect(width-400, 0, 10, height)
+            hr = pg.Rect(width - 400, 0, 10, height)
             pg.draw.rect(self.screen, (30, 0, 0), hr)
             if self.points:
                 for point in self.points:
@@ -234,11 +250,13 @@ class Game:
                 render_text_bottomleft(self.screen, msg_current, ((width - 380), (height - chat_height)), (0, 0, 0))
                 chat_height += 20
             if self.chat_log:
-                for msg in self.chat_log[-1]:
+                for msg in self.chat_log[::-1]:
                     render_text_bottomleft(self.screen, msg, ((width - 380), (height - chat_height)), (0, 0, 0))
                     chat_height += 20
             render_text_topleft(self.screen, "PID: " + str(self.pid) + ", GID: " + str(self.gid), (10, 10), (0, 0, 0))
             render_text_topleft(self.screen, "Last winner: " + str(self.last_winner), (10, 30), (0, 0, 0))
+            if self.is_drawing:
+                render_text_center(self.screen, self.answer, (width / 2, 20), (0, 0, 0))
             pg.display.flip()
 
 
