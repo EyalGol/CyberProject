@@ -1,9 +1,10 @@
 import socket
 from select import select
-from pickle import dumps, loads
 from threading import Thread
 from random import randint, choice
 from time import sleep
+from utility import *
+
 
 HEADERSIZE = 14
 GameDict = {}
@@ -23,25 +24,6 @@ random_list = ['beef', 'photo album', 'water bottle', 'toothpaste', 'packing pea
                'house', 'nail file', 'candle', 'mp3 player', 'slipper', 'toe ring', 'knife', 'scotch tape', 'camera',
                'chocolate', 'chapter book', 'drill press', 'toilet', 'plastic fork', 'bow', 'radio', 'table',
                'newspaper']
-
-
-def send_msg(conn, msg):
-    try:
-        print("sending", str(msg)[:20] + "...")
-        msg = dumps(msg)
-        conn.send(msg)
-    except:
-        pass
-
-
-def recv_msg(conn):
-    try:
-        print("receiving msg")
-        data = loads(conn.recv(100000000))
-        print(data, "received")
-        return data
-    except:
-        pass
 
 
 def handle_game(gid):

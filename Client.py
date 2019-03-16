@@ -2,52 +2,11 @@ import pygame as pg
 from pygame.locals import *
 from threading import Thread
 import socket
-from pickle import dumps, loads
 from select import select
 from time import sleep
+from utility import *
 
 pg.init()
-
-
-def send_msg(conn, msg):
-    print("sending", str(msg)[:20] + "...")
-    msg = dumps(msg)
-    conn.send(msg)
-
-
-def recv_msg(conn):
-    print("receiving msg")
-    data = loads(conn.recv(100000000))
-    print(data, "received")
-    return data
-
-
-def render_text_center(surface, text, center_cords, color, backround=None):
-    font = pg.font.Font(None, 30)
-    render = font.render(text, True, color, backround)
-    rect = render.get_rect()
-    rect.center = center_cords
-    surface.blit(render, rect)
-    return rect
-
-
-def render_text_topleft(surface, text, topleft_cords, color, backround=None):
-    font = pg.font.Font(None, 30)
-    render = font.render(text, True, color, backround)
-    rect = render.get_rect()
-    rect.topleft = topleft_cords
-    surface.blit(render, rect)
-    return rect
-
-
-def render_text_bottomleft(surface, text, bottomleft_cords, color, backround=None):
-    font = pg.font.Font(None, 30)
-    render = font.render(text, True, color, backround)
-    rect = render.get_rect()
-    rect.bottomleft = bottomleft_cords
-    surface.blit(render, rect)
-    return rect
-
 
 class Game:
     def __init__(self):
@@ -70,6 +29,7 @@ class Game:
             to_send = {"new": True}
         else:
             to_send = {"new": False, "gid": gid}
+        sleep(0.1)
         send_msg(self.client, to_send)
         data = recv_msg(self.client)
         self.pid = data["pid"]
