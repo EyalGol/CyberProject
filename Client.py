@@ -37,16 +37,26 @@ class Game:
         self.pid = data["pid"]
         self.gid = data["gid"]
         self.points = data["points"]
+        data = recv_msg(self.client)
+        print("init recv check:", data)
+        if self.pid == data["drawing"]:
+            self.is_drawing = True
+        else:
+            self.is_drawing = False
+            self.points = data["points"]
+        self.chat_log = data["chat_log"]
+        self.last_winner = data["last_won"]
+        self.answer = data["answer"]
         while self.is_playing:
             try:
                 if "clear" in data:
                     if data["clear"]:
                         self.points = []
                 data["clear"] = False
-            except Exception as msg:
-                print(msg)
-            read, write, _ = select([self.client], [self.client], [])
-            if write:
+            except Exception as err:
+                print(err)
+            readl, writel, _ = select([self.client], [self.client], [])
+            if writel:
                 if self.is_drawing:
                     to_send = {"is_drawing": True, "points": self.points}
                     send_msg(self.client, to_send)
@@ -54,20 +64,20 @@ class Game:
                     if len(self.msg) > 0:
                         to_send = {"is_drawing": False, "msg": self.msg}
                         self.msg = ""
-                        send_msg(write[0], to_send)
-            if read:
-                data = recv_msg(read[0])
-            try:
-                if self.pid == data["drawing"]:
-                    self.is_drawing = True
-                else:
-                    self.is_drawing = False
-                    self.points = data["points"]
-                self.chat_log = data["chat_log"]
-                self.last_winner = data["last_won"]
-                self.answer = data["answer"]
-            except Exception as msg:
-                print(msg)
+                        send_msg(writel[0], to_send)
+            if readl:
+                data = recv_msg(readl[0])
+                try:
+                    if self.pid == data["drawing"]:
+                        self.is_drawing = True
+                    else:
+                        self.is_drawing = False
+                        self.points = data["points"]
+                    self.chat_log = data["chat_log"]
+                    self.last_winner = data["last_won"]
+                    self.answer = data["answer"]
+                except Exception as err:
+                    print(err)
             sleep(0.05)
         self.client.close()
 

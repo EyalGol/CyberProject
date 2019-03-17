@@ -73,23 +73,24 @@ def handle_lobby(gid):
                         if not data:
                             conn.close()
                             delete_player(gid, conn)
-                        if data["is_drawing"]:
-                            gd["points"] = data["points"]
                         else:
-                            gd["chat_log"].append(data["msg"])
-                            if data["msg"] == gd["answer"]:
-                                gd["last_won"] = gd["players"][conn]
-                                gd["answer"] = choice(RANDOM_LIST)
-                                gd["drawing"] = choice(list(gd["players"].keys()))
-                                gd["clear"] = True
+                            if data["is_drawing"]:
+                                gd["points"] = data["points"]
                             else:
-                                gd["clear"] = False
-                except Exception as msg:
-                    print(msg)
+                                gd["chat_log"].append(data["msg"])
+                                if data["msg"] == gd["answer"]:
+                                    gd["last_won"] = gd["players"][conn]
+                                    gd["answer"] = choice(RANDOM_LIST)
+                                    gd["drawing"] = choice(list(gd["players"].keys()))
+                                    gd["clear"] = True
+                                else:
+                                    gd["clear"] = False
+                except Exception as err:
+                    print(err)
             try:
                 if writel:
-                    to_send = {"drawing": gd["drawing"], "points": gd["points"], "chat_log": gd["chat_log"],
-                               "answer": gd["answer"], "last_won": gd["last_won"], "clear": gd["clear"]}
+                    to_send = to_send = {"drawing": gd["drawing"], "points": gd["points"], "chat_log": gd["chat_log"],
+                                         "answer": gd["answer"], "last_won": gd["last_won"], "clear": gd["clear"]}
                     for conn in writel:
                         data = send_msg(conn, to_send)
                         if not data:
@@ -97,8 +98,8 @@ def handle_lobby(gid):
                             delete_player(gid, conn)
                 gd["clear"] = False
                 sleep(0.1)
-            except Exception as msg:
-                print(msg)
+            except Exception as err:
+                print(err)
 
 
 def accept_client_connections():
@@ -117,14 +118,14 @@ def accept_client_connections():
                 while gid in GameDict:
                     gid = randint(10000, 99999)
                 init_new_lobby(gid)
-                Thread(target=handle_lobby, args=([gid]))
+                Thread(target=handle_lobby, args=([gid])).start()
             else:
                 try:
                     gid = int(data["gid"])
                 except Exception as err:
                     print(addr, "tried to connect but entered a false gid", err)
             if not GameDict[gid]["running"]:
-                Thread(target=handle_lobby, args=([gid]))
+                Thread(target=handle_lobby, args=([gid])).start()
             while data["pid"] in GameDict[gid]["players"]:
                 data["pid"] += "1"
             pid = data["pid"]

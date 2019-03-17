@@ -35,8 +35,9 @@ def send_msg(conn, msg):
     try:
         msg = dumps(msg)
         conn.send(msg)
+        return True
     except:
-        pass
+        return False
 
 
 def recv_msg(conn):
