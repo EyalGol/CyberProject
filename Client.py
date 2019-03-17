@@ -8,6 +8,8 @@ from utility import *
 
 pg.init()
 
+
+# TODO make gui for the username(pid)
 class Game:
     def __init__(self):
         self.is_playing = True
@@ -17,7 +19,7 @@ class Game:
         self.chat_log = []
         self.msg = ""
         self.points = []
-        self.pid = None
+        self.pid = "Mike"
         self.gid = None
         self.last_winner = None
         self.is_drawing = False
@@ -26,21 +28,35 @@ class Game:
     def start_client(self, ip, port, gid=None):
         self.client.connect((ip, int(port)))
         if gid is None:
-            to_send = {"new": True}
+            to_send = {"new": True, "pid": self.pid}
         else:
-            to_send = {"new": False, "gid": gid}
-        sleep(0.1)
+            to_send = {"new": False, "gid": gid, "pid": self.pid}
+        sleep(0.2)
         send_msg(self.client, to_send)
         data = recv_msg(self.client)
         self.pid = data["pid"]
         self.gid = data["gid"]
+        self.points = data["points"]
+        data = recv_msg(self.client)
+        print("init recv check:", data)
+        if self.pid == data["drawing"]:
+            self.is_drawing = True
+        else:
+            self.is_drawing = False
+            self.points = data["points"]
+        self.chat_log = data["chat_log"]
+        self.last_winner = data["last_won"]
+        self.answer = data["answer"]
         while self.is_playing:
-            if "clear" in data:
-                if data["clear"]:
-                    self.points = []
-            data["clear"] = False
-            read, write, _ = select([self.client], [self.client], [])
-            if write:
+            try:
+                if "clear" in data:
+                    if data["clear"]:
+                        self.points = []
+                data["clear"] = False
+            except Exception as err:
+                print(err)
+            readl, writel, _ = select([self.client], [self.client], [])
+            if writel:
                 if self.is_drawing:
                     to_send = {"is_drawing": True, "points": self.points}
                     send_msg(self.client, to_send)
@@ -48,18 +64,21 @@ class Game:
                     if len(self.msg) > 0:
                         to_send = {"is_drawing": False, "msg": self.msg}
                         self.msg = ""
-                        send_msg(write[0], to_send)
-            if read:
-                data = recv_msg(read[0])
-                if self.pid == data["drawing"]:
-                    self.is_drawing = True
-                else:
-                    self.is_drawing = False
-                    self.points = data["points"]
-                self.chat_log = data["chat_log"]
-                self.last_winner = data["last_won"]
-                self.answer = data["answer"]
-            sleep(0.2)
+                        send_msg(writel[0], to_send)
+            if readl:
+                data = recv_msg(readl[0])
+                try:
+                    if self.pid == data["drawing"]:
+                        self.is_drawing = True
+                    else:
+                        self.is_drawing = False
+                        self.points = data["points"]
+                    self.chat_log = data["chat_log"]
+                    self.last_winner = data["last_won"]
+                    self.answer = data["answer"]
+                except Exception as err:
+                    print(err)
+            sleep(0.05)
         self.client.close()
 
     def start_menu(self):
@@ -86,8 +105,8 @@ class Game:
     def connect_menu(self):
         self.screen = pg.display.set_mode((640, 480))
         is_typing = True
-        ip = "IP"
-        port = "PORT"
+        ip = "localhost"
+        port = "3345"
         gid = "Game ID"
         editing = None
         while is_typing and self.is_playing:
@@ -136,8 +155,8 @@ class Game:
     def create_menu(self):
         self.screen = pg.display.set_mode((640, 480))
         is_typing = True
-        ip = "IP"
-        port = "PORT"
+        ip = "localhost"
+        port = "3345"
         editing = None
         while is_typing and self.is_playing:
             for evt in pg.event.get():
@@ -217,6 +236,14 @@ class Game:
             render_text_topleft(self.screen, "Last winner: " + str(self.last_winner), (10, 30), (0, 0, 0))
             if self.is_drawing:
                 render_text_center(self.screen, self.answer, (width / 2, 20), (0, 0, 0))
+            else:
+                blank = ""
+                for char in self.answer:
+                    if char == " ":
+                        blank += "  "
+                    else:
+                        blank += "_ "
+                render_text_center(self.screen, blank, (width / 2, 20), (0, 0, 0))
             pg.display.flip()
 
 
