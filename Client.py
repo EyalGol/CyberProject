@@ -9,6 +9,7 @@ from utility import *
 pg.init()
 
 
+# TODO make gui for the username(pid)
 class Game:
     def __init__(self):
         self.is_playing = True
@@ -18,7 +19,7 @@ class Game:
         self.chat_log = []
         self.msg = ""
         self.points = []
-        self.pid = None
+        self.pid = "Mike"
         self.gid = None
         self.last_winner = None
         self.is_drawing = False
@@ -27,9 +28,9 @@ class Game:
     def start_client(self, ip, port, gid=None):
         self.client.connect((ip, int(port)))
         if gid is None:
-            to_send = {"new": True}
+            to_send = {"new": True, "pid": self.pid}
         else:
-            to_send = {"new": False, "gid": gid}
+            to_send = {"new": False, "gid": gid, "pid": self.pid}
         sleep(0.2)
         send_msg(self.client, to_send)
         data = recv_msg(self.client)
