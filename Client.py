@@ -78,7 +78,6 @@ class Game:
                     self.answer = data["answer"]
                 except Exception as err:
                     print(err)
-            sleep(0.05)
         self.client.close()
 
     def start_menu(self):

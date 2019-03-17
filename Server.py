@@ -37,6 +37,11 @@ print("binding successful")
 
 
 def init_new_lobby(gid):
+    """
+    initiates a "table" for a new lobby with the key of gid
+    :param gid: key for the table
+    :return: nothing
+    """
     GameDict[gid] = {}
     gd = GameDict[gid]
     gd["chat_log"] = []
@@ -49,16 +54,30 @@ def init_new_lobby(gid):
 
 
 def delete_player(gid, conn_dell):
-    gd = GameDict[gid]
-    for pid, conn in gd["players"].items():
-        if conn == conn_dell:
-            del gd["players"][pid]
-            break
+    """
 
+    :param gid: the lobby the player belongs to
+    :param conn_dell: his connection (socket)
+    :return: Nothing
+    """
+    gd = GameDict[gid]
+    try:
+        for pid, conn in gd["players"].items():
+            if conn == conn_dell:
+                del gd["players"][pid]
+                break
+    except Exception as err:
+        print("failed to delete a client:", err)
 
 def handle_lobby(gid):
+    """
+    handles a new lobby
+    :param gid: the lobbies ID
+    :return: Nothing
+    """
     gd = GameDict[gid]
     gd["running"] = True
+    start_time = time()
     while server_running:
         if gd["players"]:
             try:
@@ -67,39 +86,66 @@ def handle_lobby(gid):
                 print("gid:", gid, "select failed:", err)
                 readl, writel = [], []
             if readl:
-                try:
-                    for conn in readl:
-                        data = recv_msg(conn)
-                        if not data:
-                            conn.close()
-                            delete_player(gid, conn)
-                        else:
-                            if data["is_drawing"]:
-                                gd["points"] = data["points"]
-                            else:
-                                gd["chat_log"].append(data["msg"])
-                                if data["msg"] == gd["answer"]:
-                                    gd["last_won"] = gd["players"][conn]
-                                    gd["answer"] = choice(RANDOM_LIST)
-                                    gd["drawing"] = choice(list(gd["players"].keys()))
-                                    gd["clear"] = True
-                                else:
-                                    gd["clear"] = False
-                except Exception as err:
-                    print(err)
-            try:
-                if writel:
-                    to_send = to_send = {"drawing": gd["drawing"], "points": gd["points"], "chat_log": gd["chat_log"],
-                                         "answer": gd["answer"], "last_won": gd["last_won"], "clear": gd["clear"]}
-                    for conn in writel:
-                        data = send_msg(conn, to_send)
-                        if not data:
-                            conn.close()
-                            delete_player(gid, conn)
-                gd["clear"] = False
-                sleep(0.1)
-            except Exception as err:
-                print(err)
+                for conn in readl:
+                    recv_from_client(conn, gid)
+
+            if writel:
+                to_send = to_send = {"drawing": gd["drawing"], "points": gd["points"], "chat_log": gd["chat_log"],
+                                     "answer": gd["answer"], "last_won": gd["last_won"], "clear": gd["clear"]}
+                for conn in writel:
+                    send_to_client(conn, gid, to_send)
+            gd["clear"] = False
+            sleep(0.05)
+        else:
+            if time() - start_time > 200:
+                gd["running"] = False
+                break
+
+
+def send_to_client(conn, gid, to_send):
+    """
+    handles sending data to a client
+    :param conn: client connection (socket)
+    :param gid: the lobby the player belongs to
+    :param to_send: data meant to be sent
+    :return: Nothing
+    """
+    try:
+        data = send_msg(conn, to_send)
+        if not data:
+            conn.close()
+            delete_player(gid, conn)
+    except Exception as err:
+        print("failed to send data to a client:", err)
+
+
+def recv_from_client(conn, gid):
+    """
+    handles receiving and sorting data from a client
+    :param conn: the clients connection (socket)
+    :param gid: the lobby the player belongs to
+    :return: Nothing
+    """
+    try:
+        gd = GameDict[gid]
+        data = recv_msg(conn)
+        if not data:
+            conn.close()
+            delete_player(gid, conn)
+        else:
+            if data["is_drawing"]:
+                gd["points"] = data["points"]
+            else:
+                gd["chat_log"].append(data["msg"])
+                if data["msg"] == gd["answer"]:
+                    gd["last_won"] = gd["players"][conn]
+                    gd["answer"] = choice(RANDOM_LIST)
+                    gd["drawing"] = choice(list(gd["players"].keys()))
+                    gd["clear"] = True
+                else:
+                    gd["clear"] = False
+    except Exception as err:
+        print("failed to receive data from a client:", err)
 
 
 def accept_client_connections():
@@ -113,25 +159,36 @@ def accept_client_connections():
         conn, addr = server.accept()
         data = recv_msg(conn)
         if data:
+
+            # if the client asked to build a new lobby for him
             if data["new"]:
                 gid = randint(10000, 99999)
                 while gid in GameDict:
                     gid = randint(10000, 99999)
                 init_new_lobby(gid)
                 Thread(target=handle_lobby, args=([gid])).start()
+
+            # if the client asks to connect to an existing lobby
             else:
                 try:
                     gid = int(data["gid"])
                 except Exception as err:
                     print(addr, "tried to connect but entered a false gid", err)
+
+            # checks if the lobby is running atm if not opens a new thread for it
             if not GameDict[gid]["running"]:
                 Thread(target=handle_lobby, args=([gid])).start()
+
+            # ensures that the client pid is unique
             while data["pid"] in GameDict[gid]["players"]:
                 data["pid"] += "1"
             pid = data["pid"]
-            was_empty = True if not GameDict[gid]["players"] else False
-            if was_empty:
+
+            # if the lobby was empty entitles the player as the drawer
+            if GameDict[gid]["players"]:
                 GameDict[gid]["drawing"] = pid
+
+            # initial communication
             gd = GameDict[gid]
             send_msg(conn, {"gid": gid, "pid": pid, "points": GameDict[gid]["points"]})
             to_send = {"drawing": gd["drawing"], "points": gd["points"], "chat_log": gd["chat_log"],
@@ -172,16 +229,21 @@ def backup(do_now=None):
 
 
 if __name__ == "__main__":
+    # start backup thread
     Thread(target=backup).start()
+    # start client handling
     Thread(target=accept_client_connections).start()
+    # look out for client input
     while server_running:
         cmnd = input(">")
         if cmnd == "close":
             server_running = False
+
+    # writs a human readable log if the client closes the server
     with open("server_log.txt", "w") as file:
         print("writing log")
         file.write(pformat(GameDict))
     print("done")
-
+    # backup before exit
     backup(True)
     exit()
