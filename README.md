@@ -1,6 +1,6 @@
 # Draw my thing 
 ### (multipel lobies, logs, and backups)
-##### `require pygame`
+#### `requires pygame`
 
 #### A quick project for 12th grade
 i made a moch up of draw my thing with the main focus being the back-end
