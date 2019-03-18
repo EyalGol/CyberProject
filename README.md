@@ -1,4 +1,5 @@
-# Draw my thing (Multipel Lobies)
+# Draw my thing 
+### (Multipel Lobies, logs, and backups)
 ##### `require pygame`
 
 #### A quick project for 12th grade
