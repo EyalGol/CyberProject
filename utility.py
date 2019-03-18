@@ -1,5 +1,6 @@
 from _pickle import dumps, loads
 import pygame as pg
+import socket
 
 HEADERSIZE = 10
 
@@ -31,12 +32,22 @@ def render_text_bottomleft(surface, text, bottomleft_cords, color, backround=Non
     return rect
 
 
+def render_text_midright(surface, text, midright_cords, color, backround=None):
+    font = pg.font.Font(None, 30)
+    render = font.render(text, True, color, backround)
+    rect = render.get_rect()
+    rect.midright = midright_cords
+    surface.blit(render, rect)
+    return rect
+
+
 def send_msg(conn, msg):
     try:
         msg = dumps(msg)
         conn.send(msg)
         return True
-    except:
+    except ConnectionError as err:
+        print(err)
         return False
 
 
@@ -44,8 +55,11 @@ def recv_msg(conn):
     try:
         data = loads(conn.recv(100000))
         return data
-    except:
-        pass
+    except ConnectionError as err:
+        print(err)
+        return False
+    except EOFError as err:
+        print(err)
 
 
 """

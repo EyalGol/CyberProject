@@ -19,18 +19,18 @@ class Game:
         self.chat_log = []
         self.msg = ""
         self.points = []
-        self.pid = "Mike"
+        self.pid = None
         self.gid = None
         self.last_winner = None
         self.is_drawing = False
         self.answer = ""
 
-    def start_client(self, ip, port, gid=None):
+    def start_client(self, ip, port, pid, gid=None):
         self.client.connect((ip, int(port)))
         if gid is None:
-            to_send = {"new": True, "pid": self.pid}
+            to_send = {"new": True, "pid": pid}
         else:
-            to_send = {"new": False, "gid": gid, "pid": self.pid}
+            to_send = {"new": False, "gid": gid, "pid": pid}
         sleep(0.2)
         send_msg(self.client, to_send)
         data = recv_msg(self.client)
@@ -54,7 +54,7 @@ class Game:
                         self.points = []
                 data["clear"] = False
             except Exception as err:
-                print(err)
+                print("error:", err)
             readl, writel, _ = select([self.client], [self.client], [])
             if writel:
                 if self.is_drawing:
@@ -77,7 +77,8 @@ class Game:
                     self.last_winner = data["last_won"]
                     self.answer = data["answer"]
                 except Exception as err:
-                    print(err)
+                    print("error:", err)
+            sleep(0.05)
         self.client.close()
 
     def start_menu(self):
@@ -104,6 +105,7 @@ class Game:
     def connect_menu(self):
         self.screen = pg.display.set_mode((640, 480))
         is_typing = True
+        pid = "username"
         ip = "localhost"
         port = "3345"
         gid = "Game ID"
@@ -118,16 +120,21 @@ class Game:
                             port += port[:-1]
                         elif editing == 2:
                             gid = gid[:-1]
+                        elif editing == 3:
+                            pid = pid[:-1]
                     elif editing == 0:
                         ip += evt.unicode
                     elif editing == 1:
                         port += evt.unicode
                     elif editing == 2:
                         gid += evt.unicode
+                    elif editing == 3:
+                        pid += evt.unicode
                 if evt.type == QUIT:
                     self.is_playing = False
             self.screen.fill((0, 0, 0))
             center = self.screen.get_rect().center
+            pid_rect = render_text_center(self.screen, pid, (center[0], center[1] - 120), (255, 255, 255), (80, 80, 80))
             ip_rect = render_text_center(self.screen, ip, (center[0], center[1] - 70), (255, 255, 255), (80, 80, 80))
             port_rect = render_text_center(self.screen, port, (center[0], center[1] - 25), (255, 255, 255),
                                            (80, 80, 80))
@@ -147,15 +154,20 @@ class Game:
                 elif gid_rect.collidepoint(pos):
                     gid = ""
                     editing = 2
+                elif pid_rect.collidepoint(pos):
+                    pid = ""
+                    editing = 3
                 elif connect_button_rect.collidepoint(pos):
-                    Thread(target=self.start_client, args=(ip, port, gid)).start()
+                    Thread(target=self.start_client, args=(ip, port, pid, gid)).start()
                     self.game_start()
 
     def create_menu(self):
         self.screen = pg.display.set_mode((640, 480))
         is_typing = True
+        pid = "username"
         ip = "localhost"
         port = "3345"
+        pid = "username"
         editing = None
         while is_typing and self.is_playing:
             for evt in pg.event.get():
@@ -164,18 +176,24 @@ class Game:
                         if editing == 0:
                             ip = ip[:-1]
                         elif editing == 1:
-                            port = port[:-1]
+                            port += port[:-1]
+                        elif editing == 2:
+                            pid = pid[:-1]
                     elif editing == 0:
                         ip += evt.unicode
                     elif editing == 1:
                         port += evt.unicode
+                    elif editing == 2:
+                        pid += evt.unicode
                 if evt.type == QUIT:
                     self.is_playing = False
             self.screen.fill((0, 0, 0))
             center = self.screen.get_rect().center
-            ip_rect = render_text_center(self.screen, ip, (center[0], center[1] - 50), (255, 255, 255), (80, 80, 80))
-            port_rect = render_text_center(self.screen, port, center, (255, 255, 255), (80, 80, 80))
-            connect_button_rect = render_text_center(self.screen, "Create", (center[0], center[1] + 50),
+            pid_rect = render_text_center(self.screen, pid, (center[0], center[1] - 70), (255, 255, 255), (80, 80, 80))
+            ip_rect = render_text_center(self.screen, ip, (center[0], center[1] - 25), (255, 255, 255), (80, 80, 80))
+            port_rect = render_text_center(self.screen, port, (center[0], center[1] + 25), (255, 255, 255),
+                                           (80, 80, 80))
+            connect_button_rect = render_text_center(self.screen, "Connect", (center[0], center[1] + 75),
                                                      (255, 255, 255), (80, 80, 80))
             pg.display.flip()
             is_pressed = pg.mouse.get_pressed()[0]
@@ -187,8 +205,11 @@ class Game:
                 elif port_rect.collidepoint(pos):
                     port = ""
                     editing = 1
+                elif pid_rect.collidepoint(pos):
+                    pid = ""
+                    editing = 2
                 elif connect_button_rect.collidepoint(pos):
-                    Thread(target=self.start_client, args=(ip, port)).start()
+                    Thread(target=self.start_client, args=(ip, port, pid)).start()
                     self.game_start()
 
     def game_start(self):
@@ -234,7 +255,7 @@ class Game:
             render_text_topleft(self.screen, "PID: " + str(self.pid) + ", GID: " + str(self.gid), (10, 10), (0, 0, 0))
             render_text_topleft(self.screen, "Last winner: " + str(self.last_winner), (10, 30), (0, 0, 0))
             if self.is_drawing:
-                render_text_center(self.screen, self.answer, (width / 2, 20), (0, 0, 0))
+                render_text_midright(self.screen, self.answer, (width - 420, 20), (0, 0, 0))
             else:
                 blank = ""
                 for char in self.answer:
@@ -242,7 +263,7 @@ class Game:
                         blank += "  "
                     else:
                         blank += "_ "
-                render_text_center(self.screen, blank, (width / 2, 20), (0, 0, 0))
+                render_text_midright(self.screen, blank, (width - 420, 20), (0, 0, 0))
             pg.display.flip()
 
 

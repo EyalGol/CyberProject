@@ -1,4 +1,3 @@
-import socket
 import pickle
 from select import select
 from threading import Thread
@@ -8,18 +7,19 @@ from random import randint, choice
 from time import sleep, time
 from utility import *
 
+SOCKET_TIME_OUT = 5
 MAX_CONNECTIONS = 30
 PORT = 3345
 BACKUP_TIME = 60
-RANDOM_LIST = ['beef', 'photo album', 'water bottle', 'toothpaste', 'grid paper', 'clothes', 'picture frame', 'pen',
-               'bowl', 'stop sign', 'bread', 'lotion', 'bracelet', 'soap', 'clay pot', 'cat', 'carrots', 'spring',
-               'box', 'cell phone', 'socks', 'needle', 'wagon', 'USB drive', 'food', 'spoon', 'shampoo',
-               'candy wrapper', 'mop', 'shoe lace', 'sponge', 'desk', 'piano', 'charger', 'flowers', 'buckel',
-               'video games', 'shovel', 'soda can', 'seat belt', 'helmet', 'bag', 'tissue box', 'door', 'tomato',
-               'mouse pad', 'teddies', 'pillow', 'truck', 'playing card', 'sun glasses', 'brocolli', 'fridge',
-               'coasters', 'button', 'keyboard', 'computer', 'bed', 'bottle', 'mirror', 'pool stick', 'speakers',
-               'house', 'candle', 'mp3 player', 'slipper', 'knife', 'camera', 'chocolate', 'drill press', 'toilet',
-               'fork', 'bow', 'radio', 'table', 'newspaper']
+RANDOM_LIST = ['beef', 'photo album', 'water bottle', 'toothpaste', 'clothes', 'picture frame', 'pen', 'bowl',
+               'stop sign', 'bread', 'lotion', 'bracelet', 'soap', 'clay pot', 'cat', 'carrots', 'spring', 'box',
+               'cell phone', 'socks', 'needle', 'wagon', 'USB drive', 'food', 'spoon', 'shampoo', 'candy wrapper',
+               'mop', 'shoe lace', 'sponge', 'desk', 'piano', 'charger', 'flowers', 'buckel', 'video games', 'shovel',
+               'soda can', 'seat belt', 'helmet', 'bag', 'tissue box', 'door', 'tomato', 'mouse pad', 'teddies',
+               'pillow', 'truck', 'playing card', 'sun glasses', 'brocolli', 'fridge', 'coasters', 'button', 'keyboard',
+               'computer', 'bed', 'bottle', 'mirror', 'pool stick', 'speakers', 'house', 'candle', 'mp3 player',
+               'slipper', 'knife', 'camera', 'chocolate', 'drill press', 'toilet', 'fork', 'bow', 'radio', 'table',
+               'newspaper']
 
 server_running = True
 # init global vars:
@@ -48,26 +48,27 @@ def init_new_lobby(gid):
     gd["players"] = {}
     gd["points"] = []
     gd["clear"] = False
+    gd["drawing"] = None
     gd["last_won"] = None
     gd["running"] = False
     gd["answer"] = choice(RANDOM_LIST)
 
 
-def delete_player(gid, conn_dell):
+def get_player_by_conn(gid, val):
     """
 
-    :param gid: the lobby the player belongs to
-    :param conn_dell: his connection (socket)
-    :return: Nothing
+    :param gid:
+    :param val:
+    :return:
     """
     gd = GameDict[gid]
     try:
         for pid, conn in gd["players"].items():
-            if conn == conn_dell:
-                del gd["players"][pid]
-                break
+            if conn == val:
+                return pid
     except Exception as err:
-        print("failed to delete a client:", err)
+        print("wasn't able to get key by val:", err)
+
 
 def handle_lobby(gid):
     """
@@ -95,7 +96,7 @@ def handle_lobby(gid):
                 for conn in writel:
                     send_to_client(conn, gid, to_send)
             gd["clear"] = False
-            sleep(0.05)
+            sleep(0.1)
         else:
             if time() - start_time > 200:
                 gd["running"] = False
@@ -114,7 +115,7 @@ def send_to_client(conn, gid, to_send):
         data = send_msg(conn, to_send)
         if not data:
             conn.close()
-            delete_player(gid, conn)
+            del gd["players"][get_player_by_conn(gid, conn)]
     except Exception as err:
         print("failed to send data to a client:", err)
 
@@ -131,20 +132,24 @@ def recv_from_client(conn, gid):
         data = recv_msg(conn)
         if not data:
             conn.close()
-            delete_player(gid, conn)
+            del gd["players"][get_player_by_conn(gid, conn)]
         else:
             if data["is_drawing"]:
                 gd["points"] = data["points"]
             else:
                 gd["chat_log"].append(data["msg"])
-                if data["msg"] == gd["answer"]:
-                    gd["last_won"] = gd["players"][conn]
+                if str(data["msg"]).strip().lower() == str(gd["answer"]).strip().lower():
+                    gd["last_won"] = get_player_by_conn(gid, conn)
                     gd["answer"] = choice(RANDOM_LIST)
                     gd["drawing"] = choice(list(gd["players"].keys()))
                     gd["clear"] = True
                 else:
                     gd["clear"] = False
-    except Exception as err:
+                while len(gd["chat_log"]) > 24:
+                    gd["chat_log"] = gd["chat_log"][1:]
+    except KeyError as err:
+        print("failed to receive data from a client:", err)
+    except AttributeError as err:
         print("failed to receive data from a client:", err)
 
 
@@ -157,9 +162,9 @@ def accept_client_connections():
     print("Server is open")
     while server_running:
         conn, addr = server.accept()
+        conn.settimeout(SOCKET_TIME_OUT)
         data = recv_msg(conn)
         if data:
-
             # if the client asked to build a new lobby for him
             if data["new"]:
                 gid = randint(10000, 99999)
@@ -185,7 +190,7 @@ def accept_client_connections():
             pid = data["pid"]
 
             # if the lobby was empty entitles the player as the drawer
-            if GameDict[gid]["players"]:
+            if not GameDict[gid]["players"]:
                 GameDict[gid]["drawing"] = pid
 
             # initial communication
@@ -209,11 +214,12 @@ def backup(do_now=None):
 
     def write_backup():
         try:
-            for lobby in GameDict.values():
+            gdict = dict(GameDict)
+            for lobby in gdict.values():
                 lobby["players"] = {}
             with open("back_up.pickle", "wb") as file:
                 print("backing up")
-                pickle.dump(GameDict, file)
+                pickle.dump(gdict, file)
                 print("done")
         except Exception as err:
             print("backup failed:", err)
@@ -229,8 +235,9 @@ def backup(do_now=None):
 
 
 if __name__ == "__main__":
-    # start backup thread
-    Thread(target=backup).start()
+    # start backup thread (atm disabled crashes the server)
+    # Thread(target=backup).start()
+
     # start client handling
     Thread(target=accept_client_connections).start()
     # look out for client input
@@ -238,7 +245,6 @@ if __name__ == "__main__":
         cmnd = input(">")
         if cmnd == "close":
             server_running = False
-
     # writs a human readable log if the client closes the server
     with open("server_log.txt", "w") as file:
         print("writing log")
