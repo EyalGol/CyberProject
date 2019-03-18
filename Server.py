@@ -6,6 +6,7 @@ from pprint import pformat
 from random import randint, choice
 from time import sleep, time
 from utility import *
+from copy import copy
 
 SOCKET_TIME_OUT = 5
 MAX_CONNECTIONS = 30
@@ -26,6 +27,8 @@ server_running = True
 try:
     with open("back_up.pickle", "rb") as file:
         GameDict = pickle.load(file)
+        for lobby in GameDict.values():
+            lobby["players"] = {}
 except Exception as err:
     print("restoration from backup failed:", err)
     GameDict = {}
@@ -54,17 +57,17 @@ def init_new_lobby(gid):
     gd["answer"] = choice(RANDOM_LIST)
 
 
-def get_player_by_conn(gid, val):
+def get_player_by_conn(gid, conn):
     """
-
-    :param gid:
-    :param val:
-    :return:
+    Gets a player PID from GameDict by his connection
+    :param gid: the player lobbies ID
+    :param conn: the players connection
+    :return: the players PID
     """
     gd = GameDict[gid]
     try:
         for pid, conn in gd["players"].items():
-            if conn == val:
+            if conn == conn:
                 return pid
     except Exception as err:
         print("wasn't able to get key by val:", err)
@@ -111,6 +114,7 @@ def send_to_client(conn, gid, to_send):
     :param to_send: data meant to be sent
     :return: Nothing
     """
+    gd = GameDict[gid]
     try:
         data = send_msg(conn, to_send)
         if not data:
@@ -214,7 +218,7 @@ def backup(do_now=None):
 
     def write_backup():
         try:
-            gdict = dict(GameDict)
+            gdict = copy(GameDict)
             for lobby in gdict.values():
                 lobby["players"] = {}
             with open("back_up.pickle", "wb") as file:
@@ -235,11 +239,12 @@ def backup(do_now=None):
 
 
 if __name__ == "__main__":
-    # start backup thread (atm disabled crashes the server)
-    # Thread(target=backup).start()
+    # start backup thread
+    Thread(target=backup).start()
 
     # start client handling
     Thread(target=accept_client_connections).start()
+
     # look out for client input
     while server_running:
         cmnd = input(">")
