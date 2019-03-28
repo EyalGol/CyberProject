@@ -6,7 +6,12 @@ from pprint import pformat
 from random import randint, choice
 from time import sleep, time
 from utility import *
-from copy import copy
+from copy import deepcopy as copy
+from queue import Queue
+from Crypto.PublicKey import RSA
+
+private_key = RSA.generate(2048)
+public_key = private_key.publickey()
 
 SOCKET_TIME_OUT = 5
 MAX_CONNECTIONS = 30
@@ -21,7 +26,6 @@ RANDOM_LIST = ['beef', 'photo album', 'water bottle', 'toothpaste', 'clothes', '
                'computer', 'bed', 'bottle', 'mirror', 'pool stick', 'speakers', 'house', 'candle', 'mp3 player',
                'slipper', 'knife', 'camera', 'chocolate', 'drill press', 'toilet', 'fork', 'bow', 'radio', 'table',
                'newspaper']
-
 server_running = True
 # init global vars:
 try:
@@ -66,8 +70,8 @@ def get_player_by_conn(gid, conn):
     """
     gd = GameDict[gid]
     try:
-        for pid, conn in gd["players"].items():
-            if conn == conn:
+        for pid, conn_cipher in gd["players"].items():
+            if conn_cipher[0] == conn:
                 return pid
     except Exception as err:
         print("wasn't able to get key by val:", err)
@@ -84,8 +88,9 @@ def handle_lobby(gid):
     start_time = time()
     while server_running:
         if gd["players"]:
+            sockets = [conn_cipher[0] for conn_cipher in gd["players"].values()]
             try:
-                readl, writel, _ = select(gd["players"].values(), gd["players"].values(), [])
+                readl, writel, _ = (sockets, sockets, [])
             except Exception as err:
                 print("gid:", gid, "select failed:", err)
                 readl, writel = [], []
@@ -99,7 +104,7 @@ def handle_lobby(gid):
                 for conn in writel:
                     send_to_client(conn, gid, to_send)
             gd["clear"] = False
-            sleep(0.1)
+            sleep(0.2)
         else:
             if time() - start_time > 200:
                 gd["running"] = False
@@ -116,10 +121,12 @@ def send_to_client(conn, gid, to_send):
     """
     gd = GameDict[gid]
     try:
-        data = send_msg(conn, to_send)
+        pid = get_player_by_conn(gid, conn)
+        data = send_thread(gd["players"][pid][1], conn, to_send)
         if not data:
+            print("player", pid, "has disconnected")
             conn.close()
-            del gd["players"][get_player_by_conn(gid, conn)]
+            del gd["players"][pid]
     except Exception as err:
         print("failed to send data to a client:", err)
 
@@ -133,12 +140,17 @@ def recv_from_client(conn, gid):
     """
     try:
         gd = GameDict[gid]
-        data = recv_msg(conn)
+        pid = get_player_by_conn(gid, conn)
+        data = recv_msg(gd["players"][pid][1], conn)
         if not data:
+            pid = get_player_by_conn(gid, conn)
+            print("player", pid, "has disconnected")
             conn.close()
-            del gd["players"][get_player_by_conn(gid, conn)]
+            del gd["players"][pid]
         else:
-            if data["is_drawing"]:
+            if data["failed"]:
+                pass
+            elif data["is_drawing"]:
                 gd["points"] = data["points"]
             else:
                 gd["chat_log"].append(data["msg"])
@@ -167,7 +179,10 @@ def accept_client_connections():
     while server_running:
         conn, addr = server.accept()
         conn.settimeout(SOCKET_TIME_OUT)
-        data = recv_msg(conn)
+        init_key_exchange(public_key, conn)
+        AES_key = recv_session_key(private_key, conn)
+        cipher_aes = AES.new(AES_key, AES.MODE_EAX)
+        data = recv_msg(cipher_aes, conn)
         if data:
             # if the client asked to build a new lobby for him
             if data["new"]:
@@ -186,7 +201,7 @@ def accept_client_connections():
 
             # checks if the lobby is running atm if not opens a new thread for it
             if not GameDict[gid]["running"]:
-                Thread(target=handle_lobby, args=([gid])).start()
+                Thread(target=handle_lobby, args=(gid,)).start()
 
             # ensures that the client pid is unique
             while data["pid"] in GameDict[gid]["players"]:
@@ -199,11 +214,11 @@ def accept_client_connections():
 
             # initial communication
             gd = GameDict[gid]
-            send_msg(conn, {"gid": gid, "pid": pid, "points": GameDict[gid]["points"]})
+            send_msg(cipher_aes, conn, {"gid": gid, "pid": pid, "points": GameDict[gid]["points"]})
             to_send = {"drawing": gd["drawing"], "points": gd["points"], "chat_log": gd["chat_log"],
                        "answer": gd["answer"], "last_won": gd["last_won"], "clear": gd["clear"]}
-            send_msg(conn, to_send)
-            GameDict[gid]["players"][pid] = conn
+            send_msg(cipher_aes, conn, to_send)
+            GameDict[gid]["players"][pid] = (conn, cipher_aes)
             print(str(addr), "has connected, as:", pid)
         else:
             print("connection failed:", addr)

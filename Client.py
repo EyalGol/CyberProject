@@ -5,6 +5,7 @@ import socket
 from select import select
 from time import sleep
 from utility import *
+from queue import Queue
 
 pg.init()
 
@@ -24,6 +25,7 @@ class Game:
         self.last_winner = None
         self.is_drawing = False
         self.answer = ""
+        self.cipher_aes =None
 
     def start_client(self, ip, port, pid, gid=None):
         self.client.connect((ip, int(port)))
@@ -31,22 +33,26 @@ class Game:
             to_send = {"new": True, "pid": pid}
         else:
             to_send = {"new": False, "gid": gid, "pid": pid}
+        self.cipher_aes = send_session_key(self.client)
         sleep(0.2)
-        send_msg(self.client, to_send)
-        data = recv_msg(self.client)
-        self.pid = data["pid"]
-        self.gid = data["gid"]
-        self.points = data["points"]
-        data = recv_msg(self.client)
-        print("init recv check:", data)
-        if self.pid == data["drawing"]:
-            self.is_drawing = True
-        else:
-            self.is_drawing = False
+        send_msg(self.cipher_aes, self.client, to_send)
+        data = recv_msg(self.cipher_aes, self.client)
+        try:
+            self.pid = data["pid"]
+            self.gid = data["gid"]
             self.points = data["points"]
-        self.chat_log = data["chat_log"]
-        self.last_winner = data["last_won"]
-        self.answer = data["answer"]
+            data = recv_msg(self.cipher_aes, self.client)
+            print("init recv check:", data)
+            if self.pid == data["drawing"]:
+                self.is_drawing = True
+            else:
+                self.is_drawing = False
+                self.points = data["points"]
+            self.chat_log = data["chat_log"]
+            self.last_winner = data["last_won"]
+            self.answer = data["answer"]
+        except Exception:
+            pass
         while self.is_playing:
             try:
                 if "clear" in data:
@@ -59,14 +65,14 @@ class Game:
             if writel:
                 if self.is_drawing:
                     to_send = {"is_drawing": True, "points": self.points}
-                    send_msg(self.client, to_send)
+                    send_msg(self.cipher_aes, self.client, to_send)
                 else:
                     if len(self.msg) > 0:
                         to_send = {"is_drawing": False, "msg": self.msg}
                         self.msg = ""
-                        send_msg(writel[0], to_send)
+                        send_msg(self.cipher_aes, writel[0], to_send)
             if readl:
-                data = recv_msg(readl[0])
+                data = recv_msg(self.cipher_aes, readl[0])
                 try:
                     if self.pid == data["drawing"]:
                         self.is_drawing = True
@@ -78,7 +84,7 @@ class Game:
                     self.answer = data["answer"]
                 except Exception as err:
                     print("error:", err)
-            sleep(0.05)
+            sleep(0.15)
         self.client.close()
 
     def start_menu(self):
