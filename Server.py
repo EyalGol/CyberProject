@@ -7,6 +7,9 @@ from random import randint, choice
 from time import sleep, time
 from utility import *
 from copy import copy
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import AES, PKCS1_OAEP
+
 
 SOCKET_TIME_OUT = 5
 MAX_CONNECTIONS = 30
@@ -21,6 +24,7 @@ RANDOM_LIST = ['beef', 'photo album', 'water bottle', 'toothpaste', 'clothes', '
                'computer', 'bed', 'bottle', 'mirror', 'pool stick', 'speakers', 'house', 'candle', 'mp3 player',
                'slipper', 'knife', 'camera', 'chocolate', 'drill press', 'toilet', 'fork', 'bow', 'radio', 'table',
                'newspaper']
+
 
 server_running = True
 # init global vars:
@@ -37,6 +41,9 @@ for lobby in GameDict.values():
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.bind(("localhost", PORT))
 print("binding successful")
+
+private_key = RSA.generate(2048)
+public_key = private_key.publickey().export_key()
 
 
 def init_new_lobby(gid):
@@ -66,8 +73,8 @@ def get_player_by_conn(gid, conn):
     """
     gd = GameDict[gid]
     try:
-        for pid, conn in gd["players"].items():
-            if conn == conn:
+        for pid, sok_key in gd["players"].items():
+            if conn == sok_key[0]:
                 return pid
     except Exception as err:
         print("wasn't able to get key by val:", err)
@@ -85,19 +92,22 @@ def handle_lobby(gid):
     while server_running:
         if gd["players"]:
             try:
-                readl, writel, _ = select(gd["players"].values(), gd["players"].values(), [])
+                sockets = [con_key[0] for con_key in gd["players"].values()]
+                readl, writel, _ = select(socket, socket, [])
             except Exception as err:
                 print("gid:", gid, "select failed:", err)
                 readl, writel = [], []
             if readl:
                 for conn in readl:
-                    recv_from_client(conn, gid)
+                    pid = get_player_by_conn(conn)
+                    recv_from_client(pid, gid)
 
             if writel:
-                to_send = to_send = {"drawing": gd["drawing"], "points": gd["points"], "chat_log": gd["chat_log"],
-                                     "answer": gd["answer"], "last_won": gd["last_won"], "clear": gd["clear"]}
+                to_send = {"drawing": gd["drawing"], "points": gd["points"], "chat_log": gd["chat_log"],
+                           "answer": gd["answer"], "last_won": gd["last_won"], "clear": gd["clear"]}
                 for conn in writel:
-                    send_to_client(conn, gid, to_send)
+                    pid = get_player_by_conn(conn)
+                    send_to_client(pid, gid, to_send)
             gd["clear"] = False
             sleep(0.1)
         else:
@@ -106,7 +116,7 @@ def handle_lobby(gid):
                 break
 
 
-def send_to_client(conn, gid, to_send):
+def send_to_client(pid, gid, to_send):
     """
     handles sending data to a client
     :param conn: client connection (socket)
@@ -116,15 +126,16 @@ def send_to_client(conn, gid, to_send):
     """
     gd = GameDict[gid]
     try:
-        data = send_msg(conn, to_send)
+
+        data = send_msg(gd["players"][pid][1], gd["players"][pid][0], to_send)
         if not data:
-            conn.close()
-            del gd["players"][get_player_by_conn(gid, conn)]
+            gd["players"][pid][0].close()
+            del gd["players"][pid]
     except Exception as err:
         print("failed to send data to a client:", err)
 
 
-def recv_from_client(conn, gid):
+def recv_from_client(pid, gid):
     """
     handles receiving and sorting data from a client
     :param conn: the clients connection (socket)
@@ -133,17 +144,17 @@ def recv_from_client(conn, gid):
     """
     try:
         gd = GameDict[gid]
-        data = recv_msg(conn)
+        data = recv_msg(gd["players"][pid][1], gd["players"][pid][0])
         if not data:
-            conn.close()
-            del gd["players"][get_player_by_conn(gid, conn)]
+            gd["players"][pid][0].close()
+            del gd["players"][[pid]]
         else:
             if data["is_drawing"]:
                 gd["points"] = data["points"]
             else:
                 gd["chat_log"].append(data["msg"])
                 if str(data["msg"]).strip().lower() == str(gd["answer"]).strip().lower():
-                    gd["last_won"] = get_player_by_conn(gid, conn)
+                    gd["last_won"] = pid
                     gd["answer"] = choice(RANDOM_LIST)
                     gd["drawing"] = choice(list(gd["players"].keys()))
                     gd["clear"] = True
@@ -167,7 +178,15 @@ def accept_client_connections():
     while server_running:
         conn, addr = server.accept()
         conn.settimeout(SOCKET_TIME_OUT)
-        data = recv_msg(conn)
+        # receive session key
+        conn.sendall(public_key)
+        sleep(0.1)
+        data = loads(conn.recv(4000))
+        nounce = data[1]
+        enc_session_key = data[0]
+        cipher_rsa = PKCS1_OAEP.new(private_key)
+        session_key = cipher_rsa.decrypt(enc_session_key)
+        data = recv_msg(session_key, conn)
         if data:
             # if the client asked to build a new lobby for him
             if data["new"]:
@@ -199,11 +218,11 @@ def accept_client_connections():
 
             # initial communication
             gd = GameDict[gid]
-            send_msg(conn, {"gid": gid, "pid": pid, "points": GameDict[gid]["points"]})
+            send_msg(session_key, conn, {"gid": gid, "pid": pid, "points": GameDict[gid]["points"]})
             to_send = {"drawing": gd["drawing"], "points": gd["points"], "chat_log": gd["chat_log"],
                        "answer": gd["answer"], "last_won": gd["last_won"], "clear": gd["clear"]}
-            send_msg(conn, to_send)
-            GameDict[gid]["players"][pid] = conn
+            send_msg(session_key, conn, to_send)
+            GameDict[gid]["players"][pid] = (conn, (session_key, nounce))
             print(str(addr), "has connected, as:", pid)
         else:
             print("connection failed:", addr)
@@ -240,7 +259,7 @@ def backup(do_now=None):
 
 if __name__ == "__main__":
     # start backup thread
-    Thread(target=backup).start()
+    #Thread(target=backup).start()
 
     # start client handling
     Thread(target=accept_client_connections).start()

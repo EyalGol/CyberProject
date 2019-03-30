@@ -1,6 +1,7 @@
 from _pickle import dumps, loads
 import pygame as pg
 import socket
+from Crypto.Cipher import AES
 
 HEADERSIZE = 10
 
@@ -41,19 +42,39 @@ def render_text_midright(surface, text, midright_cords, color, backround=None):
     return rect
 
 
-def send_msg(conn, msg):
+def send_msg(aes_key, conn, msg):
+    """
+    sends a message to he designated connetion
+    :param conn: the designated socket
+    :param msg: the data
+    :return: True if sent scornfully Else False
+    """
+    cipher_aes = AES.new(aes_key[0], AES.MODE_EAX, aes_key[1])
     try:
-        msg = dumps(msg)
-        conn.send(msg)
+        print("send decrypted data", msg)
+        msg = bytes(str(msg), "utf-8")
+        enc_msg = cipher_aes.encrypt(msg)
+        print("send encrypted data", enc_msg)
+        conn.send(enc_msg)
         return True
     except ConnectionError as err:
         print(err)
         return False
 
 
-def recv_msg(conn):
+def recv_msg(aes_key, conn):
+    """
+    receives data fron the designated connection
+    :param conn: the connection socket
+    :return: the received data
+    """
+    cipher_aes = AES.new(aes_key[0], AES.MODE_EAX, aes_key[1])
     try:
-        data = loads(conn.recv(100000))
+        enc_data = conn.recv(10000000)
+        print("recv encrypted data", enc_data)
+        data = cipher_aes.decrypt(enc_data)
+        print("recv decrypted data", data)
+        data = dict(data.decode())
         return data
     except ConnectionError as err:
         print(err)
@@ -64,6 +85,10 @@ def recv_msg(conn):
 
 """
 def send_msg(conn, msg):
+    sends a buffered message to he designated connetion
+    :param conn: the designated socket
+    :param msg: the data
+    :return: True if sent scornfully Else False
     msg = dumps(msg)
     msg = bytes(f'{hex(len(msg)):<{HEADERSIZE}}', "utf8") + msg
     total_sent = 0
@@ -71,12 +96,18 @@ def send_msg(conn, msg):
     while total_sent < msglen:
         try:
             total_sent += conn.send(msg[total_sent:])
-        except:
+        except ConnectionError as err:
+            print(err)
             return False
+        except EOFError as err:
+            print(err)
     return True
 
 
 def recv_msg(conn):
+    receives buffered data fron the designated connection
+    :param conn: the connection socket
+    :return: the received data
     try:
         msg = conn.recv(64)
     except:
@@ -87,8 +118,12 @@ def recv_msg(conn):
         try:
             full_msg += conn.recv(1024)
             print("recved:", len(full_msg), "left:", msglen-len(full_msg))
-        except:
+        except ConnectionError as err:
+            print(err)
             return False
+        except EOFError as err:
+            print(err)
     msg = loads(full_msg[HEADERSIZE:msglen+HEADERSIZE])
     return msg
+
 """

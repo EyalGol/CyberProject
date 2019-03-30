@@ -5,11 +5,14 @@ import socket
 from select import select
 from time import sleep
 from utility import *
+from Crypto.PublicKey import RSA
+from Crypto.Random import get_random_bytes
+from Crypto.Cipher import AES, PKCS1_OAEP
+
 
 pg.init()
 
 
-# TODO make gui for the username(pid)
 class Game:
     def __init__(self):
         self.is_playing = True
@@ -24,6 +27,8 @@ class Game:
         self.last_winner = None
         self.is_drawing = False
         self.answer = ""
+        self.public_key = None
+        self.session_key = None
 
     def start_client(self, ip, port, pid, gid=None):
         self.client.connect((ip, int(port)))
@@ -32,12 +37,25 @@ class Game:
         else:
             to_send = {"new": False, "gid": gid, "pid": pid}
         sleep(0.2)
-        send_msg(self.client, to_send)
-        data = recv_msg(self.client)
+
+        # send session key
+        data = self.client.recv(4000)
+        self.public_key = RSA.import_key(data)
+        cipher_rsa = PKCS1_OAEP.new(self.public_key)
+        self.session_key = get_random_bytes(16)
+        enc_session_key = cipher_rsa.encrypt(self.session_key)
+        aes = AES.new(self.session_key, AES.MODE_EAX)
+        key_nouce = dumps((enc_session_key, aes.nonce))
+        self.client.sendall(key_nouce)
+
+        send_msg(self.session_key, self.client, to_send)
+        data = None
+        while not data:
+            data = recv_msg(self.session_key, self.client)
         self.pid = data["pid"]
         self.gid = data["gid"]
         self.points = data["points"]
-        data = recv_msg(self.client)
+        data = recv_msg(self.session_key, self.client)
         print("init recv check:", data)
         if self.pid == data["drawing"]:
             self.is_drawing = True
@@ -59,14 +77,14 @@ class Game:
             if writel:
                 if self.is_drawing:
                     to_send = {"is_drawing": True, "points": self.points}
-                    send_msg(self.client, to_send)
+                    send_msg(self.session_key, self.client, to_send)
                 else:
                     if len(self.msg) > 0:
                         to_send = {"is_drawing": False, "msg": self.msg}
                         self.msg = ""
-                        send_msg(writel[0], to_send)
+                        send_msg(self.session_key, writel[0], to_send)
             if readl:
-                data = recv_msg(readl[0])
+                data = recv_msg(self.session_key, readl[0])
                 try:
                     if self.pid == data["drawing"]:
                         self.is_drawing = True
