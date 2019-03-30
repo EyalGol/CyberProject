@@ -8,4 +8,5 @@ i made a moch up of draw my thing with the main focus being the back-end
 - pickle and cPickle
 - sockets
 - threading and multiprocessing 
+- pycrypto (AES and RSA encryption)
 - GUI with the use of [pygame](https://github.com/pygame/)
