@@ -1,4 +1,6 @@
+#from json import dumps, loads
 from _pickle import dumps, loads
+from base64 import b64encode, b64decode
 import pygame as pg
 import socket
 
@@ -43,7 +45,7 @@ def render_text_midright(surface, text, midright_cords, color, backround=None):
 
 def send_msg(conn, msg):
     try:
-        msg = dumps(msg)
+        msg = b64encode(dumps(msg))
         conn.send(msg)
         return True
     except ConnectionError as err:
@@ -53,7 +55,7 @@ def send_msg(conn, msg):
 
 def recv_msg(conn):
     try:
-        data = loads(conn.recv(100000))
+        data = loads(b64decode(conn.recv(100000)))
         return data
     except ConnectionError as err:
         print(err)
