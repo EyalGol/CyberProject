@@ -3,7 +3,7 @@
 #### `requires pygame`
 
 #### A quick project for 12th grade
-i made a moch up of draw my thing with the main focus being the back-end
+i made a mock up of draw my thing with the main focus being the back-end
 ### In this project i used:
 - pickle and cPickle
 - sockets
